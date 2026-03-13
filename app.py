@@ -1,4 +1,18 @@
 import os
+
+# ── Lokal fallback credential'lar (import'lardan ÖNCE set edilmeli) ──────────
+# mailer.py ve wa_cloud.py modül yüklenirken env'i okur,
+# bu yüzden setdefault'lar her import'tan önce çalışmalı.
+os.environ.setdefault("EMAIL_PROVIDER",   "smtp")
+os.environ.setdefault("EMAIL_FROM",       "yigitnarinofficial@gmail.com")
+os.environ.setdefault("EMAIL_FROM_NAME",  "Nexa CRM")
+os.environ.setdefault("SMTP_HOST",        "smtp.gmail.com")
+os.environ.setdefault("SMTP_PORT",        "587")
+os.environ.setdefault("SMTP_USE_TLS",     "true")
+os.environ.setdefault("SMTP_USERNAME",    "yigitnarinofficial@gmail.com")
+os.environ.setdefault("SMTP_PASSWORD",    "gqzmkricuzhiwozh")
+os.environ.setdefault("ENABLE_CUSTOMER_EMAIL_AUTOMATION", "true")
+
 import time
 import requests
 import threading
@@ -7,6 +21,7 @@ from flask import Flask, jsonify, send_file, request as flask_request
 from bs4 import BeautifulSoup
 from flask_cors import CORS
 from wa_cloud import send_whatsapp, send_whatsapp_template, wa_status, verify_webhook_token
+from mailer import send_transactional_email, build_lead_confirmation_email, email_status
 
 # ── Firebase Admin SDK ──────────────────────────────────────────
 import firebase_admin
@@ -23,12 +38,15 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8462430471:AAEM_AjKYL
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID",   "6183709337")
 SERVICE_ACCOUNT    = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "service-account.json")
 
+
 # WhatsApp Cloud API — Meta
-# WA_PHONE_NUMBER_ID : Meta Business 2192 WhatsApp 2192 Phone Number ID
+# WA_PHONE_NUMBER_ID : Meta Business → WhatsApp → Phone Number ID
 # WA_ACCESS_TOKEN    : System User permanent token
 # WA_ADVISOR_PHONE   : Danışmanın WA numarası (bildirim alacak)
 WA_ADVISOR_PHONE   = os.environ.get("WA_ADVISOR_PHONE", "905324514008")
-
+CUSTOMER_WA_TEMPLATE_NAME = os.environ.get("CUSTOMER_WA_TEMPLATE_NAME", "").strip()
+ENABLE_CUSTOMER_EMAIL_AUTOMATION = os.environ.get("ENABLE_CUSTOMER_EMAIL_AUTOMATION", "true").strip().lower() in ("1", "true", "yes")
+ENABLE_CUSTOMER_WA_AUTOMATION    = os.environ.get("ENABLE_CUSTOMER_WA_AUTOMATION", "false").strip().lower() in ("1", "true", "yes")
 
 # İlan hedef URL
 TARGET_URL = "https://www.cb.com.tr/ilanlar?officeid=372&officeuserid=18631"
@@ -338,6 +356,12 @@ def admin_logout():
 def whatsapp_status():
     """Meta Graph API üzerinden WA phone number durumunu kontrol eder."""
     return jsonify(wa_status())
+
+
+@app.route("/api/email/status", methods=["GET"])
+def customer_email_status():
+    """Transactional e-posta yapılandırma durumunu döner."""
+    return jsonify(email_status())
 
 
 @app.route("/api/wa/webhook", methods=["GET"])
@@ -935,14 +959,23 @@ def _write_notification_log(lead_id: str, channel: str, status: str, detail: str
         print(f"_write_notification_log hatası: {e}")
 
 
+def _result_ok(result) -> bool:
+    """bool veya dict sonuçlarını ortak başarı kontrolüne çevirir."""
+    if isinstance(result, dict):
+        return bool(result.get("ok"))
+    return bool(result)
+
+
 def _send_with_retry(fn, *args, retries=3, delay=2, **kwargs):
     """Fonksiyonu retries kez dener. (True, None) veya (False, hata) döner."""
     last_err = None
     for attempt in range(1, retries + 1):
         try:
             result = fn(*args, **kwargs)
-            if result:
+            if _result_ok(result):
                 return True, None
+            if isinstance(result, dict) and result.get("error"):
+                last_err = result.get("error")
         except Exception as e:
             last_err = e
         if attempt < retries:
@@ -995,7 +1028,8 @@ def update_lead_state():
 def send_lead_report():
     """
     Form gönderiminden hemen sonra tetiklenir.
-    Telegram üzerinden danışmana otomatik rapor gönderir, retry mekanizması içerir.
+    Danışmana Telegram + WhatsApp bildirimi gönderir.
+    İsteğe bağlı olarak müşteriye onay e-postası ve WhatsApp template mesajı gönderir.
     Body: { leadId, name, phone, email?, neighborhood?, property_type?, notes? }
     """
     data    = flask_request.json or {}
@@ -1018,13 +1052,12 @@ def send_lead_report():
         + (f"🏠 Mülk Tipi: {ptype}\n" if ptype else "")
         + (f"💬 Not: {notes}\n" if notes else "")
         + f"\n⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
-        f"🔗 Lead ID: <code>{lead_id}</code>"
+        + f"🔗 Lead ID: <code>{lead_id}</code>"
     )
 
     ok_tg, err_tg = _send_with_retry(send_telegram, advisor_msg)
     result["channels"]["telegram"] = "sent" if ok_tg else f"failed: {err_tg}"
 
-    # ── WhatsApp Cloud API bildirimi ─────────────────────────────
     wa_msg = (
         f"📋 *Yeni Değerleme Talebi!*\n\n"
         f"👤 *{name}*\n"
@@ -1034,14 +1067,47 @@ def send_lead_report():
         + (f"🏠 Mülk Tipi: {ptype}\n" if ptype else "")
         + (f"💬 Not: {notes}\n" if notes else "")
         + f"\n⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
-        f"🔗 Lead: {lead_id}"
+        + f"🔗 Lead: {lead_id}"
     )
     wa_result = send_whatsapp(WA_ADVISOR_PHONE, wa_msg)
     result["channels"]["whatsapp"] = "sent" if wa_result["ok"] else f"skipped: {wa_result.get('error','')}"
 
+    email_result = {"ok": False, "error": "disabled"}
+    if ENABLE_CUSTOMER_EMAIL_AUTOMATION and email:
+        subject, text_body, html_body = build_lead_confirmation_email(
+            name=name,
+            phone=phone,
+            neighborhood=neigh,
+            property_type=ptype,
+            notes=notes,
+        )
+        email_result = send_transactional_email(email, subject, text_body, html_body)
+        result["channels"]["customer_email"] = "sent" if email_result.get("ok") else f"skipped: {email_result.get('error','')}"
+    elif email:
+        result["channels"]["customer_email"] = "disabled"
+    else:
+        result["channels"]["customer_email"] = "missing_email"
+
+    customer_wa_result = {"ok": False, "error": "disabled"}
+    if ENABLE_CUSTOMER_WA_AUTOMATION and CUSTOMER_WA_TEMPLATE_NAME and phone:
+        customer_wa_result = send_whatsapp_template(
+            phone,
+            CUSTOMER_WA_TEMPLATE_NAME,
+            "tr",
+            [{"type": "body", "parameters": [{"type": "text", "text": name}]}],
+        )
+        result["channels"]["customer_whatsapp"] = "sent" if customer_wa_result.get("ok") else f"skipped: {customer_wa_result.get('error','')}"
+    else:
+        result["channels"]["customer_whatsapp"] = "disabled"
+
     if _fb_initialized and lead_id:
-        _write_notification_log(lead_id, "telegram",  "sent" if ok_tg    else "failed",  err_tg or "")
-        _write_notification_log(lead_id, "whatsapp",  "sent" if wa_result["ok"] else "skipped", wa_result.get("error",""))
+        _write_notification_log(lead_id, "telegram", "sent" if ok_tg else "failed", err_tg or "")
+        _write_notification_log(lead_id, "whatsapp", "sent" if wa_result["ok"] else "skipped", wa_result.get("error", ""))
+        if email:
+            _write_notification_log(lead_id, "customer_email", "sent" if email_result.get("ok") else "skipped", email_result.get("error", ""))
+        if phone and CUSTOMER_WA_TEMPLATE_NAME:
+            _write_notification_log(lead_id, "customer_whatsapp", "sent" if customer_wa_result.get("ok") else "skipped", customer_wa_result.get("error", ""))
+
         if ok_tg or wa_result["ok"]:
             try:
                 now_iso = datetime.now(timezone.utc).isoformat()
@@ -1050,6 +1116,12 @@ def send_lead_report():
                     "reportSentAt":   now_iso,
                     "stageChangedAt": now_iso,
                     "updatedAt":      now_iso,
+                    "automation": {
+                        "advisorTelegram": ok_tg,
+                        "advisorWhatsapp": wa_result["ok"],
+                        "customerEmail": email_result.get("ok", False),
+                        "customerWhatsapp": customer_wa_result.get("ok", False),
+                    }
                 })
                 _log_lead_event(lead_id, "stage_change", {
                     "from":  "new_lead",
@@ -1057,17 +1129,29 @@ def send_lead_report():
                     "actor": "system",
                     "note":  "Otomatik rapor gönderildi (Telegram + WhatsApp Cloud API)",
                 })
+                if email_result.get("ok"):
+                    _log_lead_event(lead_id, "customer_email_sent", {
+                        "actor": "system",
+                        "email": email,
+                        "template": "lead_confirmation",
+                    })
+                if customer_wa_result.get("ok"):
+                    _log_lead_event(lead_id, "customer_whatsapp_sent", {
+                        "actor": "system",
+                        "phone": phone,
+                        "template": CUSTOMER_WA_TEMPLATE_NAME,
+                    })
             except Exception as e:
                 print(f"Lead güncelleme hatası: {e}")
 
-    if not ok_tg and not wa_result["ok"]:
+    if not ok_tg and not wa_result["ok"] and not email_result.get("ok") and not customer_wa_result.get("ok"):
         print(f"❌ Rapor hiçbir kanaldan gönderilemedi! Lead: {lead_id}")
         result["ok"] = False
 
     return jsonify(result)
-
-
 @app.route("/api/lead/events/<lead_id>", methods=["GET"])
+
+
 def get_lead_events(lead_id):
     """Lead'e ait tüm event timeline'ını döner."""
     if not _fb_initialized:
@@ -1339,14 +1423,27 @@ def start_scheduler():
 
 
 # ================================================================
-# BAŞLAT
+# BAŞLAT / BOOTSTRAP
 # ================================================================
+_bootstrap_done = False
+
+
+def bootstrap_app():
+    global _bootstrap_done
+    if _bootstrap_done:
+        return
+    init_firebase_admin()
+    start_scheduler()
+    _bootstrap_done = True
+
+
+bootstrap_app()
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Unified Sunucu Başlatıldı: http://0.0.0.0:{port}")
     print(f"   🌐 Web Sitesi : http://0.0.0.0:{port}/")
     print(f"   📊 CRM Paneli : http://0.0.0.0:{port}/crm")
     print(f"   🔧 Admin Panel: http://0.0.0.0:{port}/admin")
-    init_firebase_admin()
-    start_scheduler()
     app.run(host="0.0.0.0", port=port, debug=False)
