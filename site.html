@@ -40,8 +40,9 @@
 
     html {
       scroll-behavior: smooth;
-      /* Sabit topbar (44px) + navbar (~70px) = anchor linklerin altına düşmemesi için */
       scroll-padding-top: 120px;
+      overflow-x: hidden;        /* ← sağa kaymayı tamamen engeller */
+      max-width: 100%;
     }
 
     body {
@@ -50,6 +51,13 @@
       color: var(--navy);
       overflow-x: hidden;
       position: relative;
+      max-width: 100%;
+      width: 100%;
+    }
+
+    /* Tüm görsellerin container dışına taşmaması */
+    img, video, iframe, embed, object {
+      max-width: 100%;
     }
 
     /* Animated Background */
@@ -67,8 +75,8 @@
     .bg-animated::before {
       content: '';
       position: absolute;
-      width: 200%;
-      height: 200%;
+      width: 100%;
+      height: 100%;
       background: 
         radial-gradient(circle at 20% 50%, rgba(212, 175, 55, 0.03) 0%, transparent 50%),
         radial-gradient(circle at 80% 80%, rgba(19, 34, 56, 0.02) 0%, transparent 50%),
@@ -142,6 +150,7 @@
       z-index: 10;
       text-align: center;
       max-width: 1200px;
+      width: 100%;
       padding: 60px 30px;
       animation: fadeInUp 1.2s ease-out;
     }
@@ -323,6 +332,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      width: 100%;
     }
 
     .logo {
@@ -442,6 +452,8 @@
     .section {
       padding: 120px 40px;
       position: relative;
+      width: 100%;
+      overflow-x: hidden;
     }
 
     .section-dark {
@@ -900,6 +912,8 @@
     .map-section {
       padding: 0;
       position: relative;
+      overflow: hidden;
+      width: 100%;
     }
 
     .map-section-header {
@@ -1299,6 +1313,8 @@
       background: var(--deep-navy);
       color: var(--gray-light);
       padding: 80px 40px 40px;
+      overflow-x: hidden;
+      width: 100%;
     }
 
     .footer-content {
@@ -2514,6 +2530,8 @@
       align-items: center;
       justify-content: center;
       box-shadow: 0 2px 20px rgba(212,175,55,0.25);
+      overflow: hidden;
+      width: 100%;
     }
 
     .top-bar-inner {
@@ -3261,6 +3279,7 @@
       position: relative;
       padding: 100px 40px;
       overflow: hidden;
+      width: 100%;
     }
 
     .valuation-cta-bg {
@@ -3971,6 +3990,7 @@
     background: linear-gradient(135deg, #0a1628 0%, #132238 55%, #0e1e35 100%);
     padding: 100px 40px;
     overflow: hidden;
+    width: 100%;
   }
 
   .contact-noise {
