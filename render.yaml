@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: nexa-flask
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: WA_PHONE_NUMBER_ID
+        sync: false
+      - key: WA_ACCESS_TOKEN
+        sync: false
+      - key: WA_VERIFY_TOKEN
+        sync: false
+      - key: WA_ADVISOR_PHONE
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
