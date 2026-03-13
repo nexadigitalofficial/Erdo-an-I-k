@@ -6022,7 +6022,7 @@
     .nxp-aoff{font-size:.67rem;color:#c9a84c;margin-top:2px;letter-spacing:.07em}
 
     /* actions */
-    #nxp-m-actions{display:flex;gap:10px}
+    #nxp-m-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .nxp-btn{flex:1;padding:13px;border-radius:3px;font-size:.72rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .2s;border:1px solid transparent}
     .nxp-btn-gold{background:#c9a84c;color:#0c0c11;border-color:#c9a84c}
     .nxp-btn-gold:hover{background:#e8c97a;border-color:#e8c97a}
@@ -6044,7 +6044,7 @@
       #nxp-body{padding:18px 16px 28px}
       #nxp-m-title{font-size:1.3rem}
       #nxp-m-price{font-size:1.8rem}
-      #nxp-m-actions{flex-direction:column}
+      #nxp-m-actions{grid-template-columns:1fr}
       .nxp-sl-btn{display:none}
     }
   </style>
@@ -6093,6 +6093,10 @@
           <a class="nxp-btn nxp-btn-gold" id="nxp-m-link" href="#" target="_blank" rel="noopener" style="background:#25D366;border-color:#25D366;color:#fff;">
             <i class="fab fa-whatsapp" style="font-size:15px;"></i>
             WhatsApp
+          </a>
+          <a class="nxp-btn" id="nxp-m-call" href="tel:+905324514008" style="background:rgba(59,130,246,.15);color:#60a5fa;border-color:rgba(59,130,246,.3);">
+            <i class="fas fa-phone" style="font-size:13px;"></i>
+            Ara
           </a>
           <button class="nxp-btn nxp-btn-kredi" id="nxp-m-kredi" onclick="nexaShowKredi()">
             <i class="fas fa-calculator" style="font-size:13px;"></i>
